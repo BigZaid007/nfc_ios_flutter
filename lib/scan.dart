@@ -1,44 +1,70 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_nfc_kit/flutter_nfc_kit.dart';
+import 'dart:io' show Platform;
+import 'dart:convert';
 
-class ScanScreen extends StatefulWidget {
+class NFCScreen extends StatefulWidget {
   @override
-  _ScanScreenState createState() => _ScanScreenState();
+  _NFCScreenState createState() => _NFCScreenState();
 }
 
-class _ScanScreenState extends State<ScanScreen> {
-  String _scanResult = 'Tap the button to start scanning';
+class _NFCScreenState extends State<NFCScreen> {
+  String _status = 'Ready to scan';
 
-  Future<void> _startScan() async {
+  Future<void> _startNFCScan() async {
     setState(() {
-      _scanResult = 'Scanning...';
+      _status = 'Starting NFC scan...';
     });
 
     try {
-      var tag = await FlutterNfcKit.poll();
+      if (Platform.isAndroid) {
+        var availability = await FlutterNfcKit.nfcAvailability;
+        if (availability != NFCAvailability.available) {
+          setState(() {
+            _status = 'NFC not available on this Android device';
+          });
+          return;
+        }
+      }
+
+      // Start NFC polling
+      var tag = await FlutterNfcKit.poll(
+        timeout: Duration(seconds: 20),
+        iosMultipleTagMessage: "Multiple tags found!",
+        iosAlertMessage: "Hold your device near an NFC tag",
+      );
+
       setState(() {
-        _scanResult = 'Scan successful!\n\n'
-            'Tag ID: ${tag.id}\n'
-            'Tag Type: ${tag.type}\n'
-            'Standard: ${tag.standard}\n'
-            'ATQA: ${tag.atqa}\n'
-            'SAK: ${tag.sak}\n'
-            'Historical Bytes: ${tag.historicalBytes}\n'
-            'Protocol Info: ${tag.protocolInfo}\n'
-            'Application Data: ${tag.applicationData}\n'
-            'Higher Layer Response: ${tag.hiLayerResponse}\n'
-            'Manufacturer: ${tag.manufacturer}\n'
-            'System Code: ${tag.systemCode}\n'
-            'DSF ID: ${tag.dsfId}\n'
-            'NFCA Content: ${tag.ndefAvailable}\n'
-            'NDEFM Content: ${tag.ndefAvailable}\n'
-            'NFCV Content: ${tag.ndefAvailable}';
+        _status = 'Tag detected: ${jsonEncode(tag)}';
+      });
+
+      // Read NDEF records if available
+      if (tag.ndefAvailable!) {
+        var records = await FlutterNfcKit.readNDEFRecords(cached: false);
+        setState(() {
+          _status += '\n\nNDEF Records:';
+          for (var record in records) {
+            _status += '\n${record.toString()}';
+          }
+        });
+      }
+    } on PlatformException catch (e) {
+      setState(() {
+        if (e.code == '406' && Platform.isIOS) {
+          _status = 'NFC is not available or not enabled on this iOS device.\n'
+              'Make sure your device supports NFC and it\'s enabled in Settings.';
+        } else {
+          _status =
+              'PlatformException ${e.code}: ${e.message}\nDetails: ${e.details}';
+        }
       });
     } catch (e) {
       setState(() {
-        _scanResult = 'Scan failed: ${e.toString()}';
+        _status = 'Error: ${e.toString()}';
       });
     } finally {
+      // Always finish the NFC session
       await FlutterNfcKit.finish();
     }
   }
@@ -47,7 +73,7 @@ class _ScanScreenState extends State<ScanScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('NFC Scan'),
+        title: Text('NFC Scanner'),
       ),
       body: Center(
         child: Column(
@@ -55,14 +81,10 @@ class _ScanScreenState extends State<ScanScreen> {
           children: <Widget>[
             Padding(
               padding: EdgeInsets.all(16.0),
-              child: Text(
-                _scanResult,
-                style: TextStyle(fontSize: 16),
-                textAlign: TextAlign.center,
-              ),
+              child: Text(_status, textAlign: TextAlign.center),
             ),
             ElevatedButton(
-              onPressed: _startScan,
+              onPressed: _startNFCScan,
               child: Text('Start NFC Scan'),
             ),
           ],
