@@ -15,14 +15,6 @@ class _ScanScreenState extends State<ScanScreen> {
     });
 
     try {
-      var availability = await FlutterNfcKit.nfcAvailability;
-      if (availability != NFCAvailability.available) {
-        setState(() {
-          _scanResult = 'NFC not available on this device';
-        });
-        return;
-      }
-
       var tag = await FlutterNfcKit.poll();
       setState(() {
         _scanResult = 'Scan successful!\n\n'
